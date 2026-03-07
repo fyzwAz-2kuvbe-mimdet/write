@@ -266,6 +266,78 @@ def get_api_key() -> str:
 
 
 # ─────────────────────────────────────────
+#  중간 저장 / 불러오기
+# ─────────────────────────────────────────
+def save_draft():
+    """현재 진행 상태를 Firebase에 저장"""
+    user = st.session_state.get("user")
+    if not user:
+        return
+    try:
+        from db import get_db
+        db = get_db()
+        db.collection("drafts").document(user["uid"]).set({
+            "uid": user["uid"],
+            "store": st.session_state.store,
+            "current_stage": st.session_state.current_stage,
+            "setup_complete": st.session_state.setup_complete,
+            "author_phase_complete": st.session_state.author_phase_complete,
+            "finished": st.session_state.finished,
+            "saved_at": datetime.datetime.now().isoformat(),
+        })
+        st.toast("💾 진행 상태가 저장됐어요!", icon="✅")
+    except Exception as e:
+        st.toast(f"저장 실패: {e}", icon="❌")
+
+
+def load_draft():
+    """Firebase에서 저장된 진행 상태 불러오기"""
+    user = st.session_state.get("user")
+    if not user:
+        return False
+    try:
+        from db import get_db
+        db = get_db()
+        doc = db.collection("drafts").document(user["uid"]).get()
+        if not doc.exists:
+            return False
+        data = doc.to_dict()
+        st.session_state.store               = data["store"]
+        st.session_state.current_stage       = data["current_stage"]
+        st.session_state.setup_complete      = data["setup_complete"]
+        st.session_state.author_phase_complete = data["author_phase_complete"]
+        st.session_state.finished            = data["finished"]
+        st.session_state.generating          = False
+        st.session_state.part_reviewing      = False
+        st.session_state.gemini_error        = None
+        return data.get("saved_at", "")
+    except Exception as e:
+        st.error(f"불러오기 실패: {e}")
+        return False
+
+
+def render_draft_controls():
+    """저장/불러오기 버튼 UI - 사이드바에 표시"""
+    user = st.session_state.get("user")
+    if not user:
+        return
+    st.markdown("---")
+    st.markdown("### 💾 진행 상태")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 저장", use_container_width=True, key="save_draft_btn"):
+            save_draft()
+    with col2:
+        if st.button("📂 불러오기", use_container_width=True, key="load_draft_btn"):
+            saved_at = load_draft()
+            if saved_at:
+                st.success(f"불러옴!\n{saved_at[:16]}")
+                st.rerun()
+            else:
+                st.info("저장된 내용이 없어요.")
+
+
+# ─────────────────────────────────────────
 #  뼈대 + 파트 1개씩 생성 로직
 # ─────────────────────────────────────────
 def generate_next_part():
@@ -726,6 +798,8 @@ def render_sidebar():
             remaining = 5 - len(parts)
             if remaining > 0:
                 st.markdown(f"⏳ 남은 파트: {remaining}개")
+
+        render_draft_controls()
 
 
 # ─────────────────────────────────────────
